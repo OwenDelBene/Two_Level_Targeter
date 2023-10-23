@@ -2,7 +2,7 @@
 from scipy.integrate import RK45, solve_ivp
 import numpy as np 
 import matplotlib.pyplot as plt
-
+import sys
 def plot_trajectory(statvector):
     
     p0 = np.array([192200, 192200, 0])#km
@@ -11,7 +11,8 @@ def plot_trajectory(statvector):
     plt.plot([p0[0]], [p0[1]],marker='o',markersize=20, markerfacecolor='green')
     plt.plot([pd[0]], [pd[1]],marker='o',markersize=20, markerfacecolor='red')
 
-    plt.show()
+    if len(sys.argv) > 1:
+        plt.show()
 
 def rk4_step( f, t, y, h ):
 	'''
@@ -277,7 +278,7 @@ def level_1(initial_state, state_desired, epsilon):
 
 
 
-def level_2(state0, statep,statef, epsilon):
+def level_2(patch_points, epsilon):
 #only one iteration
     #constraint F= v1 - state_desired[3:-2]
     #minimum norm soluion (3.12) DX = -DF.T * (DF* DF.T).inverse() * F
@@ -300,44 +301,57 @@ def level_2(state0, statep,statef, epsilon):
     h= .00001
     h_v = h* tstar / lstar
     h_p = h /lstar
+    DF = np.empty(((len(patch_points) - 2)*3, 20))
+    F = np.empty((len(patch_points) - 2, 3))
+    for i in range(len(patch_points) - 2):
+        state0 = patch_points[i]
+        statep = patch_points[i+1]
+        statef = patch_points[i+2] 
 
-    Bpo = dv1dp0(state0, h_p)
-    Bpo_inv = np.linalg.inv(Bpo) 
-    Apo = dp1dp0(state0, h_p)
-    #Apo_inv = np.linalg.inv(Apo)
+        Bpo = dv1dp0(state0, h_p)
+        Bpo_inv = np.linalg.inv(Bpo) 
+        Apo = dp1dp0(state0, h_p)
+        #Apo_inv = np.linalg.inv(Apo)
 
-    Bpf = dv1dp0(statep, h_p)
-    Bpf_inv = np.linalg.inv(Bpf)
-    Apf = dp1dp0(statep, h_p)
-    #Apf_inv np.linalg.inv(Apf)
-    #X += DX
-    binvA_po = Bpo_inv*Apo
-    binvA_pf = Bpf_inv*Apf
+        Bpf = dv1dp0(statep, h_p)
+        Bpf_inv = np.linalg.inv(Bpf)
+        Apf = dp1dp0(statep, h_p)
+        #Apf_inv np.linalg.inv(Apf)
+        #X += DX
+        binvA_po = Bpo_inv*Apo
+        binvA_pf = Bpf_inv*Apf
 
-    ap = get_acceleration(statep)
+        ap = get_acceleration(statep)
 
-    dvpdp0 = Bpo_inv 
-    dvpdt0 = -Bpo_inv*state0[3:6]
-    dvpdpp = -binvA_po
-    dvpdtp = binvA_po*statep[3:6] + ap
-    
+        dvpdp0 = Bpo_inv 
+        dvpdt0 = -Bpo_inv*state0[3:6]
+        dvpdpp = -binvA_po
+        dvpdtp = binvA_po*statep[3:6] + ap
+        
 
-    dvpdpf = Bpf_inv 
-    dvpdtf = -Bpf_inv*statef[3:6]
-    dvpdpf = -binvA_pf
-    dvpdtf = binvA_pf*statep[3:6] + ap
+        dvpdpf = Bpf_inv 
+        dvpdtf = -Bpf_inv*statef[3:6]
+        dvpdppp = -binvA_pf
+        dvpdtpp = binvA_pf*statep[3:6] + ap
 
-
-    DF = np.hstack((dvpdp0, dvpdt0, dvpdpp-dvpdpp, dvpdtp-dvpdtp, -dvpdpf, -dvpdtf))
-    #minimum norm soluion (3.12) DX = -DF.T * (DF* DF.T).inverse() * F
-    #TODO F and X
-    vp_prop = propogate(state0, dt)[-1, 3:6]
-    vf_prop = propogate(statep, dt)[-1, 3:6]
-    
-    F = np.array([vp_prop - statep[3:6], vf_prop - statef[3:6]])
-
+        
+        DF[i*3:3+ i*3] = np.hstack((np.zeros((3,1)), dvpdp0, dvpdt0, dvpdpp-dvpdppp, dvpdtp-dvpdtpp, -dvpdpf, -dvpdtf, np.zeros((3,1))))
+        print('DF shape', DF.shape)
+        print(DF)
+        print()
+        print(DF.T)
+        print()
+        print(DF @ DF.T)
+        #minimum norm soluion (3.12) DX = -DF.T * (DF* DF.T).inverse() * F
+        #TODO F and X
+        vp_prop = propogate(state0, dt)[-1, 3:6]
+        vf_prop = propogate(statep, dt)[-1, 3:6]
+        
+        F[i] = vp_prop - statep[3:6] #, vf_prop - statef[3:6]])
+    print('F shape', F.shape)
     print(f'F shape {F.shape}, DF shape {DF.shape}')
     DX = -DF.T @ np.linalg.inv( np.matmul(DF,DF.T)) @ F.T
+    print('DX shape', DX.shape, DX)
     statep[3:6] += DX
     return statep
 
@@ -385,8 +399,7 @@ if __name__ == "__main__":
             patch_points[i+1] = level_1(patch_points[i], patch_points[i+1], epsilon)
         print('LEVEL 2!!!!!!!!!!!!!')    
     #Then achieve velocity continuity
-        for i in range(len(patch_points) - 2):
-            patch_points[i+1] = level_2(patch_points[i], patch_points[i+1],patch_points[i+2], epsilon)
+        level_2(patch_points, epsilon)
         print('Global tlt iteration', i)
         i+=1
         residual = compute_residual(patch_points)
