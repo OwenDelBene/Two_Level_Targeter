@@ -14,6 +14,19 @@ def plot_trajectory(statvector):
     if len(sys.argv) > 1:
         plt.show()
 
+
+def plot_points(patch_points, msg):
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    for i,p in enumerate(patch_points):
+        pp = propogate(p,dt)
+        ax.plot3D(pp[:,0], pp[:,1], pp[:,2], label=f'{i}')
+        ax.plot3D(p[0], p[1], p[2], 'ro')
+    plt.title(msg)
+    plt.legend()
+    plt.show()
+
+
 def rk4_step( f, t, y, h ):
 	'''
 	Calculate one RK4 step
@@ -141,15 +154,13 @@ def propogate(state,dt):
     t = state[-2]
     tf = state[-1]
     state = state[:-2]
-    print('propogate')
-    print(tf, dt)
-    states = np.zeros((int(tf//dt),6))
+    states = np.zeros((int((tf-t)//dt),6))
     states[0] = np.copy(state) 
     i=1
     t+=dt 
     while t<tf:
     #for i in range(int(t),int(tf),int(dt)):
-        if i>=(int(tf//dt)):
+        if i>=(states.shape[0] ):
             break
         states[i] = rk4_step(dynamics,t,states[i-1],dt )
         t+=dt
@@ -162,9 +173,9 @@ def dp1dv0(state_guess, h ):
     t0 = state_guess[-2]
     tf = state_guess[-1]
     #state_guess = state_guess[:6]
-    dp1dvx = ((propogate(state_guess + np.array([0,0,0,h, 0,0, 0, 0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,h, 0,0,0,0]),dt))[-1] / (2*h))[:3]
-    dp1dvy = ((propogate(state_guess + np.array([0,0,0,0, h,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0, h,0,0,0]),dt))[-1] / (2*h))[:3]
-    dp1dvz = ((propogate(state_guess + np.array([0,0,0,0, 0,h,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0, 0,h,0,0]),dt))[-1] / (2*h))[:3]
+    dp1dvx = ((propogate(state_guess + np.array([0,0,0,h,0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,h,0,0,0,0]),dt))[-1] / (2*h))[:3]
+    dp1dvy = ((propogate(state_guess + np.array([0,0,0,0,h,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0,h,0,0,0]),dt))[-1] / (2*h))[:3]
+    dp1dvz = ((propogate(state_guess + np.array([0,0,0,0,0,h,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0,0,h,0,0]),dt))[-1] / (2*h))[:3]
     #dp1/dv0 
     return np.vstack((
         dp1dvx,
@@ -216,7 +227,6 @@ def level_1(initial_state, state_desired, epsilon):
 
     p1 = propogate(state_guess, dt)
     #plot_trajectory(p1*lstar)
-    print(p1)
     residual = np.linalg.norm(p1[-1][:3] - pd)* lstar 
     
 
@@ -232,14 +242,11 @@ def level_1(initial_state, state_desired, epsilon):
 
 
 
-    print(f'p1:: {p1[-1][:3]}, pd: {pd}')
     i=0
     while residual > epsilon:
         print('residual', residual)
         rho0 = state_guess[:3]
         v0 = state_guess[3:6]
-        print(f'v_guess  {v0}')
-        print(f'tf guess difference {tf_guess-tf}') 
         rho1 = p1[-1][:3]
         v1 = p1[-1][3:6]
         
@@ -248,7 +255,6 @@ def level_1(initial_state, state_desired, epsilon):
         #DX = -4x3 (3x3) * 3x1
         #DX = -4x3 * 3x1
         #DX = 4x1
-        print('TLT: ', state_guess)
         B = dp1dv0(state_guess,h)
         #B01_v1 = np.column_stack((B, v1))
         #DX = np.matmul(-B01_v1.T, np.linalg.inv(np.matmul(B01_v1, B01_v1.T))) #np.zeros(4) #??
@@ -261,7 +267,6 @@ def level_1(initial_state, state_desired, epsilon):
         p1 = propogate(state_guess, dt)
          
         #plot_trajectory(p1*lstar) 
-        print(f'p1: {p1[-1][:3]}, pd: {pd}, dp: {rho1-pd}')
         
         residual = np.linalg.norm( p1[-1][:3]- pd) * lstar
 
@@ -305,6 +310,7 @@ def level_2(patch_points, epsilon):
     h_p = h /lstar
     DF = np.zeros(((len(patch_points) - 2)*3, 4*len(patch_points)))
     F = np.zeros((3 * (len(patch_points) - 2), 1))
+    
     for i in range(len(patch_points) - 2):
         state0 = patch_points[i]
         statep = patch_points[i+1]
@@ -360,13 +366,9 @@ def level_2(patch_points, epsilon):
     #print('DX shape', DX.shape, DX)
     #states[:, 0:3] +=DX
     for i,point in enumerate(patch_points):
-        print('loop shapes')
-        print(point.shape, DX.shape)
-        print(point[:3].shape, DX[i*4:i*4 + 3].shape)
         point[:3] += np.reshape( DX[i*4:i*4 + 3], 3)
     #    point[-1] += DX[i*4 + 3] #double check
     #statep[3:6] += DX
-    return statep
 
 
 def compute_residual(patch_points):
@@ -398,35 +400,32 @@ if __name__ == "__main__":
     #constraint vector F=p1-p1d = 0
     patch1 = np.array([p0[0], p0[1], p0[2], v0[0], v0[1], v0[2], 0, tf])
     #patch2 = np.array([pd[0], pd[1], pd[2], v0[0], v0[1], v0[2], tf, tf*2  ])
-    patch3 = np.array([pd[0] , pd[1], pd[1], v0[0], v0[1], v0[2], tf, tf*2  ])
+    patch3 = np.array([pd[0] , pd[1], pd[2], v0[0] + 1, v0[1], v0[2], tf, tf*2  ])
     patch2 = patch1+ patch3
     patch3[-2] = 2*tf
     patch3[-1] = 3*tf
+
+    patch2[-2] = tf
+    patch2[-1] = 2*tf
+    patch3[3:6] *=-2
     patch_points = [patch1, patch2, patch3]
    
     residual = 99999999
-    i=0
+    iterations=0
     while residual > epsilon:
-        fig = plt.figure()
-        ax = plt.axes(projection='3d')
-        for i,p in enumerate(patch_points):
-            pp = propogate(p,dt)
-            ax.plot3D(pp[:,0], pp[:,1], pp[:,2], label=f'{i}')
-            ax.plot3D(p[0], p[1], p[2], 'ro')
-        plt.legend()
-        plt.show()
-        
+        plot_points(patch_points, f'Start of level 1:{residual}')    
         residual = compute_residual(patch_points)
         print('global residual:', residual)
     #first achieve position continuity
         for i in range(len(patch_points)-1):
             print('level 1 iteration')
-            patch_points[i+1] = level_1(patch_points[i], patch_points[i+1], epsilon)
+            patch_points[i] = level_1(patch_points[i], patch_points[i+1], epsilon)
+        plot_points(patch_points, f'Start of Level 2:{residual}')
         print('LEVEL 2!!!!!!!!!!!!!')    
     #Then achieve velocity continuity
         level_2(patch_points, epsilon)
-        print('Global tlt iteration', i)
-        i+=1
+        print('Global tlt iteration', iterations)
+        iterations+=1
         residual = compute_residual(patch_points)
         print('global residual:', residual)
         
