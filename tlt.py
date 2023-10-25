@@ -301,7 +301,7 @@ def level_2(patch_points, epsilon):
     h= .00001
     h_v = h* tstar / lstar
     h_p = h /lstar
-    DF = np.empty(((len(patch_points) - 2)*3, 20))
+    DF = np.empty(((len(patch_points) - 2)*3, 14))
     F = np.empty((len(patch_points) - 2, 3))
     for i in range(len(patch_points) - 2):
         state0 = patch_points[i]
@@ -324,17 +324,17 @@ def level_2(patch_points, epsilon):
         ap = get_acceleration(statep)
 
         dvpdp0 = Bpo_inv 
-        dvpdt0 = -Bpo_inv*state0[3:6]
+        dvpdt0 = np.reshape(-Bpo_inv @ state0[3:6], (3,1))
         dvpdpp = -binvA_po
-        dvpdtp = binvA_po*statep[3:6] + ap
+        dvpdtp = np.reshape( binvA_po @ statep[3:6] + ap, (3,1))
         
 
         dvpdpf = Bpf_inv 
-        dvpdtf = -Bpf_inv*statef[3:6]
+        dvpdtf = np.reshape(-Bpf_inv @ statef[3:6], (3,1))
         dvpdppp = -binvA_pf
-        dvpdtpp = binvA_pf*statep[3:6] + ap
+        dvpdtpp = np.reshape(binvA_pf @ statep[3:6] + ap , (3,1))
 
-        
+        print('shapes', dvpdp0.shape, dvpdt0.shape, dvpdpp.shape,dvpdtp.shape )    
         DF[i*3:3+ i*3] = np.hstack((np.zeros((3,1)), dvpdp0, dvpdt0, dvpdpp-dvpdppp, dvpdtp-dvpdtpp, -dvpdpf, -dvpdtf, np.zeros((3,1))))
         print('DF shape', DF.shape)
         print(DF)
