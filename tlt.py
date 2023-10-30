@@ -1,18 +1,11 @@
 #3.2.1 program
 from scipy.integrate import RK45, solve_ivp
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import sys
-def plot_trajectory(statvector):
-    
-    p0 = np.array([192200, 192200, 0])#km
-    pd = np.array([-153760, 0, 0]) #desired position
-    plt.plot(statvector[:,0], statvector[:,1])
-    plt.plot([p0[0]], [p0[1]],marker='o',markersize=20, markerfacecolor='green')
-    plt.plot([pd[0]], [pd[1]],marker='o',markersize=20, markerfacecolor='red')
+import os
+import shutil
 
-    if len(sys.argv) > 1:
-        plt.show()
 
 
 def plot_points(patch_points, msg):
@@ -20,12 +13,18 @@ def plot_points(patch_points, msg):
     ax = plt.axes(projection='3d')
     for i,p in enumerate(patch_points):
         pp = propogate(p,dt)
-        ax.plot3D(pp[:,0], pp[:,1], pp[:,2], label=f'{i}')
-        ax.plot3D(p[0], p[1], p[2], 'ro')
+        ax.plot3D(pp[:,0], pp[:,1], pp[:,2], label=f'patch point {i}')
+        ax.plot3D(p[0], p[1], p[2], 'ro', markersize=1)
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.clabel('z')
     plt.title(msg)
     plt.legend()
-    plt.show()
-
+    plt.savefig(f'images{os.sep}' +msg + '.png')
+    if len(sys.argv) > 1:
+        plt.show()
+    else:
+        plt.close('all')
 
 def rk4_step( f, t, y, h ):
 	'''
@@ -154,6 +153,7 @@ def propogate(state,dt):
     t = state[-2]
     tf = state[-1]
     state = state[:-2]
+    print('prop times',t,tf)
     states = np.zeros((int((tf-t)//dt),6))
     states[0] = np.copy(state) 
     i=1
@@ -226,7 +226,6 @@ def level_1(initial_state, state_desired, epsilon):
     tf_guess = initial_state[-1]
 
     p1 = propogate(state_guess, dt)
-    #plot_trajectory(p1*lstar)
     residual = np.linalg.norm(p1[-1][:3] - pd)* lstar 
     
 
@@ -255,7 +254,7 @@ def level_1(initial_state, state_desired, epsilon):
         #DX = -4x3 (3x3) * 3x1
         #DX = -4x3 * 3x1
         #DX = 4x1
-        B = dp1dv0(state_guess,h)
+        B = dp1dv0(state_guess,h_v)
         #B01_v1 = np.column_stack((B, v1))
         #DX = np.matmul(-B01_v1.T, np.linalg.inv(np.matmul(B01_v1, B01_v1.T))) #np.zeros(4) #??
         
@@ -266,12 +265,11 @@ def level_1(initial_state, state_desired, epsilon):
         #print(f'DX: {DX}')
         p1 = propogate(state_guess, dt)
          
-        #plot_trajectory(p1*lstar) 
         
         residual = np.linalg.norm( p1[-1][:3]- pd) * lstar
 
 
-        print(f'level 1 iteration {i}')
+        print(f'level 1 patch point iteration {i}')
         i+=1
 
 
@@ -314,38 +312,39 @@ def level_2(patch_points, epsilon):
     for i in range(len(patch_points) - 2):
         state0 = patch_points[i]
         statep = patch_points[i+1]
-        statef = patch_points[i+2] 
+        statef = patch_points[i+2]
 
-        Bpo = dv1dp0(state0, h_p)
-        Bpo_inv = np.linalg.inv(Bpo) 
-        Apo = dp1dp0(state0, h_p)
-        #Apo_inv = np.linalg.inv(Apo)
+        #Bpo = dv1dp0(state0, h_p)
+        Bpo = np.linalg.inv(dp1dv0(state0, h_v))
+        Bpo_inv = np.linalg.inv(Bpo)
+        Apo = np.linalg.inv(dp1dp0(state0, h_p))
 
-        Bpf = dv1dp0(statep, h_p)
+        #Bpf = dv1dp0(statep, h_p)
+        Bpf = dp1dv0(statep, h_v)
         Bpf_inv = np.linalg.inv(Bpf)
         Apf = dp1dp0(statep, h_p)
-        #Apf_inv np.linalg.inv(Apf)
-        
+
         binvA_po = Bpo_inv*Apo
         binvA_pf = Bpf_inv*Apf
 
-        ap = get_acceleration(statep)
         statepm = propogate(state0, dt)[-1]
 
-        dvpdp0 = Bpo_inv 
+        apm = get_acceleration(statepm)
+        app = get_acceleration(statep)
+        dvpdp0 = Bpo_inv
         dvpdt0 = np.reshape(-Bpo_inv @ state0[3:6], (3,1))
         dvpdpp = -binvA_po
-        dvpdtp = np.reshape( binvA_po @ statepm[3:6] + ap, (3,1))
+        dvpdtp = np.reshape( binvA_po @ statepm[3:6] + apm, (3,1))
         
         statefm = propogate(statep, dt)[-1]
-        dvpdpf = Bpf_inv 
+        dvpdpf = Bpf_inv
         dvpdtf = np.reshape(-Bpf_inv @ statefm[3:6], (3,1))
         dvpdppp = -binvA_pf
-        dvpdtpp = np.reshape(binvA_pf @ statep[3:6] + ap , (3,1))
+        dvpdtpp = np.reshape(binvA_pf @ statep[3:6] + app , (3,1))
 
         #print('shapes', dvpdp0.shape, dvpdt0.shape, dvpdpp.shape,dvpdtp.shape )    
         DF[i*3:3+ i*3, 4*i: 4*i + 12] = np.hstack((dvpdp0, dvpdt0, dvpdpp-dvpdppp, dvpdtp-dvpdtpp, -dvpdpf, -dvpdtf ))
-
+        
         """
         print('DF shape', DF.shape)
         print(DF)
@@ -355,20 +354,19 @@ def level_2(patch_points, epsilon):
         print(DF @ DF.T)
         """
         #minimum norm soluion (3.12) DX = -DF.T * (DF* DF.T).inverse() * F
-        #TODO F and X
         vp_prop = propogate(state0, dt)[-1, 3:6]
         vf_prop = propogate(statep, dt)[-1, 3:6]
         
         F[i*3:i*3 + 3] = np.reshape(vp_prop - statep[3:6], (3,1)) #, vf_prop - statef[3:6]])
-    #print('F shape', F.shape)
-    #print(f'F shape {F.shape}, DF shape {DF.shape}')
+    
+    print(f'DF {DF.shape}:{DF}')
     DX = -DF.T @ np.linalg.inv( np.matmul(DF,DF.T)) @ F
-    #print('DX shape', DX.shape, DX)
-    #states[:, 0:3] +=DX
-    for i,point in enumerate(patch_points):
-        point[:3] += np.reshape( DX[i*4:i*4 + 3], 3)
-    #    point[-1] += DX[i*4 + 3] #double check
-    #statep[3:6] += DX
+    for i in range(len(patch_points)):
+        patch_points[i][:3] +=  (np.reshape( DX[i*4:i*4 + 3], 3))
+        #patch_points[i][-1] += DX[i*4 + 3] #double check
+        print('change in position (km)',  DX[i*4:i*4 + 3]*lstar)
+        print('change in time (s)', DX[i*4 + 3]* tstar )
+        print(DX)
 
 
 def compute_residual(patch_points):
@@ -380,7 +378,22 @@ def compute_residual(patch_points):
         residual_vector[i] = np.linalg.norm(p1[:3] - patch_points[i+1][ :3])
     return np.linalg.norm(residual_vector)
 
+def compute_residual_v(patch_points):
+    n=len(patch_points) -1
+    residual_vector = np.empty(n)
+    for i in np.arange(n):
+        state = patch_points[i]
+        p1 = propogate(state,dt)[-1]
+        residual_vector[i] = np.linalg.norm(p1[3:6] - patch_points[i+1][ 3:6])
+    return np.linalg.norm(residual_vector)
 if __name__ == "__main__":
+    residuals = []
+    residual_vs = []
+    try: shutil.rmtree('images')
+    except: print('creating images directory')
+    #    os.rmdir('images')
+    os.mkdir('images')
+
     lstar = 238900 * 1.609
     G = 6.674e-20
     m_moon = 7.34767e22 #kg
@@ -392,40 +405,61 @@ if __name__ == "__main__":
     v0=np.array([-.5123, .1025, 0]) * tstar/ lstar #km
     tf = 4.3425 * 24 * 60 * 60/tstar #4.3425 days in seconds
     pd = np.array([-153760, 0, 0])/lstar #desired position
-    tf *=.5 
-    dt =25.0/tstar#.5 
+    tf *=.1
+    dt =10.0/tstar#.5 
 
     #tolerance for answer
     epsilon = 3.844e-3 # km
     #constraint vector F=p1-p1d = 0
+    v = .2 * tstar / lstar 
+    p = 100000 / lstar
+
+
     patch1 = np.array([p0[0], p0[1], p0[2], v0[0], v0[1], v0[2], 0, tf])
     #patch2 = np.array([pd[0], pd[1], pd[2], v0[0], v0[1], v0[2], tf, tf*2  ])
-    patch3 = np.array([pd[0] , pd[1], pd[2], v0[0] + 1, v0[1], v0[2], tf, tf*2  ])
+    patch3 = np.array([pd[0] , pd[1], pd[2], v0[0] , v0[1], v0[2], tf, tf*2  ])
     patch2 = patch1+ patch3
     patch3[-2] = 2*tf
     patch3[-1] = 3*tf
 
     patch2[-2] = tf
     patch2[-1] = 2*tf
-    patch3[3:6] *=-2
-    patch_points = [patch1, patch2, patch3]
+    patch3[3:6] *=-1
+    #patch4[-2] = 3*tf 
+    #patch4[-1] = 4*tf
+
+
+    #patch_points = [patch1, patch2, patch3]
+    patch_points = [patch1, patch2, patch3]#, patch4]
    
     residual = 99999999
     iterations=0
     while residual > epsilon:
         plot_points(patch_points, f'Start of level 1:{residual}')    
-        residual = compute_residual(patch_points)
-        print('global residual:', residual)
     #first achieve position continuity
         for i in range(len(patch_points)-1):
-            print('level 1 iteration')
+            print(f'level 1 patch point {i+1}')
             patch_points[i] = level_1(patch_points[i], patch_points[i+1], epsilon)
-        plot_points(patch_points, f'Start of Level 2:{residual}')
+        #plot_points(patch_points, f'Start of Level 2:{residual}')
         print('LEVEL 2!!!!!!!!!!!!!')    
     #Then achieve velocity continuity
         level_2(patch_points, epsilon)
         print('Global tlt iteration', iterations)
         iterations+=1
         residual = compute_residual(patch_points)
-        print('global residual:', residual)
-        
+        residual_v = compute_residual_v(patch_points)
+        residuals.append(residual)
+        residual_vs.append(residual_v)
+        print('global position residual, velocity residual:', residual, residual_v)
+    
+    plt.plot(np.arange(len(residuals))[1:], residuals[1:])
+    plt.title('(global) residuals vs iteration')
+    plt.ylabel('position residuals (km)')
+    plt.xlabel('global iteration number')
+    plt.show()
+    
+    plt.plot(np.arange(len(residual_vs)), residual_vs)
+    plt.title('(global) residuals vs iteration')
+    plt.ylabel('velocity residuals (km/s)')
+    plt.xlabel('global iteration number')
+    plt.show()
