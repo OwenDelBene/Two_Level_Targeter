@@ -17,7 +17,6 @@ def plot_points(patch_points, msg):
         ax.plot3D(p[0], p[1], p[2], 'ro', markersize=1)
     plt.xlabel('x')
     plt.ylabel('y')
-    plt.clabel('z')
     plt.title(msg)
     plt.legend()
     plt.savefig(f'images{os.sep}' +msg + '.png')
@@ -27,15 +26,15 @@ def plot_points(patch_points, msg):
         plt.close('all')
 
 def rk4_step( f, t, y, h ):
-	'''
-	Calculate one RK4 step
-	'''
-	k1 = f( t, y )
-	k2 = f( t + 0.5 * h, y + 0.5 * k1 * h )
-	k3 = f( t + 0.5 * h, y + 0.5 * k2 * h )
-	k4 = f( t +       h, y +       k3 * h )
+    '''
+    Calculate one RK4 step
+    '''
+    k1 = f( t, y )
+    k2 = f( t + 0.5 * h, y + 0.5 * k1 * h )
+    k3 = f( t + 0.5 * h, y + 0.5 * k2 * h )
+    k4 = f( t +       h, y +       k3 * h )
 
-	return y + h / 6.0 * ( k1 + 2 * k2 + 2 * k3 + k4 )
+    return y + h / 6.0 * ( k1 + 2 * k2 + 2 * k3 + k4 )
 
 
 def get_acceleration(state):
@@ -153,7 +152,6 @@ def propogate(state,dt):
     t = state[-2]
     tf = state[-1]
     state = state[:-2]
-    print('prop times',t,tf)
     states = np.zeros((int((tf-t)//dt),6))
     states[0] = np.copy(state) 
     i=1
@@ -310,41 +308,47 @@ def level_2(patch_points, epsilon):
     F = np.zeros((3 * (len(patch_points) - 2), 1))
     
     for i in range(len(patch_points) - 2):
+        #reference states from paper
         state0 = patch_points[i]
         statep = patch_points[i+1]
         statef = patch_points[i+2]
 
-        #Bpo = dv1dp0(state0, h_p)
-        Bpo = np.linalg.inv(dp1dv0(state0, h_v))
+        #not sure if these are right
+        Aop = dp1dp0(state0, h_p)
+        Bop = dp1dv0(state0, h_v)
+        Bpo = np.linalg.inv(Bop)
+        #yes I know this is redundant, will make more efficient if it actually works
         Bpo_inv = np.linalg.inv(Bpo)
-        Apo = np.linalg.inv(dp1dp0(state0, h_p))
+        #Bpo_inv = dv1dp0(state0,h_p) #just checking
+        Apo = np.linalg.inv(Aop)#np.linalg.inv(dp1dp0(state0, h_p))
 
         #Bpf = dv1dp0(statep, h_p)
         Bpf = dp1dv0(statep, h_v)
         Bpf_inv = np.linalg.inv(Bpf)
+        #Bpf_inv = dv1dp0(statep, h_p)
         Apf = dp1dp0(statep, h_p)
 
         binvA_po = Bpo_inv*Apo
         binvA_pf = Bpf_inv*Apf
 
         statepm = propogate(state0, dt)[-1]
+        statefm = propogate(statep, dt)[-1]
 
         apm = get_acceleration(statepm)
         app = get_acceleration(statep)
+
         dvpdp0 = Bpo_inv
         dvpdt0 = np.reshape(-Bpo_inv @ state0[3:6], (3,1))
         dvpdpp = -binvA_po
         dvpdtp = np.reshape( binvA_po @ statepm[3:6] + apm, (3,1))
-        
-        statefm = propogate(statep, dt)[-1]
+
         dvpdpf = Bpf_inv
         dvpdtf = np.reshape(-Bpf_inv @ statefm[3:6], (3,1))
         dvpdppp = -binvA_pf
         dvpdtpp = np.reshape(binvA_pf @ statep[3:6] + app , (3,1))
 
-        #print('shapes', dvpdp0.shape, dvpdt0.shape, dvpdpp.shape,dvpdtp.shape )    
         DF[i*3:3+ i*3, 4*i: 4*i + 12] = np.hstack((dvpdp0, dvpdt0, dvpdpp-dvpdppp, dvpdtp-dvpdtpp, -dvpdpf, -dvpdtf ))
-        
+
         """
         print('DF shape', DF.shape)
         print(DF)
@@ -354,20 +358,21 @@ def level_2(patch_points, epsilon):
         print(DF @ DF.T)
         """
         #minimum norm soluion (3.12) DX = -DF.T * (DF* DF.T).inverse() * F
-        vp_prop = propogate(state0, dt)[-1, 3:6]
-        vf_prop = propogate(statep, dt)[-1, 3:6]
+        vp_prop = statepm[3:6]
+        vf_prop = statefm[3:6]
         
         F[i*3:i*3 + 3] = np.reshape(vp_prop - statep[3:6], (3,1)) #, vf_prop - statef[3:6]])
-    
-    print(f'DF {DF.shape}:{DF}')
-    DX = -DF.T @ np.linalg.inv( np.matmul(DF,DF.T)) @ F
+
+    #print(f'DF {DF.shape}:{DF}')
+    DX = -DF.T @ np.linalg.inv( DF @ DF.T) @ F
     for i in range(len(patch_points)):
         patch_points[i][:3] +=  (np.reshape( DX[i*4:i*4 + 3], 3))
-        #patch_points[i][-1] += DX[i*4 + 3] #double check
+        patch_points[i][-1] += DX[i*4 + 3] #adjust end time of patch point
+        if i < (len(patch_points) -1):
+            patch_points[i+1][-2] = patch_points[i][-1]#adjust start time of next patch point
         print('change in position (km)',  DX[i*4:i*4 + 3]*lstar)
         print('change in time (s)', DX[i*4 + 3]* tstar )
-        print(DX)
-
+        assert (patch_points[i][-1] >=0) and (patch_points[i][-2] >=0)
 
 def compute_residual(patch_points):
     n=len(patch_points) -1
@@ -385,14 +390,13 @@ def compute_residual_v(patch_points):
         state = patch_points[i]
         p1 = propogate(state,dt)[-1]
         residual_vector[i] = np.linalg.norm(p1[3:6] - patch_points[i+1][ 3:6])
+    print('vel res vec')
+    for i in residual_vector:
+        print(i)
     return np.linalg.norm(residual_vector)
 if __name__ == "__main__":
     residuals = []
     residual_vs = []
-    try: shutil.rmtree('images')
-    except: print('creating images directory')
-    #    os.rmdir('images')
-    os.mkdir('images')
 
     lstar = 238900 * 1.609
     G = 6.674e-20
@@ -406,7 +410,7 @@ if __name__ == "__main__":
     tf = 4.3425 * 24 * 60 * 60/tstar #4.3425 days in seconds
     pd = np.array([-153760, 0, 0])/lstar #desired position
     tf *=.1
-    dt =10.0/tstar#.5 
+    dt =1.0/tstar#.5 
 
     #tolerance for answer
     epsilon = 3.844e-3 # km
