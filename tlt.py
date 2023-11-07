@@ -19,7 +19,6 @@ def plot_points(patch_points, msg):
     plt.ylabel('y')
     plt.title(msg)
     plt.legend()
-    plt.savefig(f'images{os.sep}' +msg + '.png')
     if len(sys.argv) > 1:
         plt.show()
     else:
@@ -197,6 +196,19 @@ def dv1dp0(state_guess, h ):
         )).T 
 
 
+def dv1dv0(state_guess, h ):
+    t0 = state_guess[-2]
+    tf = state_guess[-1]
+    #state_guess = state_guess[:6]
+    dv1dvx = ((propogate(state_guess + np.array([0,0,0,h, 0,0, 0, 0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,h, 0,0,0,0]),dt))[-1] / (2*h))[3:6]
+    dv1dvy = ((propogate(state_guess + np.array([0,0,0,0, h,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0, h,0,0,0]),dt))[-1] / (2*h))[3:6]
+    dv1dvz = ((propogate(state_guess + np.array([0,0,0,0, 0,h,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0, 0,h,0,0]),dt))[-1] / (2*h))[3:6]
+    #dp1/dv0 
+    return np.vstack((
+        dv1dvx,
+        dv1dvy,
+        dv1dvz
+        )).T 
 
 
 def dp1dp0(state_guess, h ):
@@ -280,7 +292,6 @@ def level_1(initial_state, state_desired, epsilon):
 
 
 
-
 def level_2(patch_points, epsilon):
 #only one iteration
     #constraint F= v1 - state_desired[3:-2]
@@ -316,16 +327,14 @@ def level_2(patch_points, epsilon):
         #not sure if these are right
         Aop = dp1dp0(state0, h_p)
         Bop = dp1dv0(state0, h_v)
+        
         Bpo = np.linalg.inv(Bop)
         #yes I know this is redundant, will make more efficient if it actually works
         Bpo_inv = np.linalg.inv(Bpo)
-        #Bpo_inv = dv1dp0(state0,h_p) #just checking
-        Apo = np.linalg.inv(Aop)#np.linalg.inv(dp1dp0(state0, h_p))
+        Apo = np.linalg.inv(Aop)
 
-        #Bpf = dv1dp0(statep, h_p)
         Bpf = dp1dv0(statep, h_v)
         Bpf_inv = np.linalg.inv(Bpf)
-        #Bpf_inv = dv1dp0(statep, h_p)
         Apf = dp1dp0(statep, h_p)
 
         binvA_po = Bpo_inv*Apo
@@ -366,13 +375,15 @@ def level_2(patch_points, epsilon):
     #print(f'DF {DF.shape}:{DF}')
     DX = -DF.T @ np.linalg.inv( DF @ DF.T) @ F
     for i in range(len(patch_points)):
-        patch_points[i][:3] +=  (np.reshape( DX[i*4:i*4 + 3], 3))
-        patch_points[i][-1] += DX[i*4 + 3] #adjust end time of patch point
+        patch_points[i][:3] +=   (np.reshape( DX[i*4:i*4 + 3], 3))
+        patch_points[i][-1] +=  0* DX[i*4 + 3] #adjust end time of patch point
         if i < (len(patch_points) -1):
             patch_points[i+1][-2] = patch_points[i][-1]#adjust start time of next patch point
         print('change in position (km)',  DX[i*4:i*4 + 3]*lstar)
         print('change in time (s)', DX[i*4 + 3]* tstar )
         assert (patch_points[i][-1] >=0) and (patch_points[i][-2] >=0)
+
+
 
 def compute_residual(patch_points):
     n=len(patch_points) -1
