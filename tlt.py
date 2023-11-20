@@ -11,11 +11,13 @@ import shutil
 
 def plot_points(patch_points, msg):
     fig = plt.figure()
-    ax = plt.axes(projection='3d')
+    #ax = plt.axes(projection='3d')
     for i,p in enumerate(patch_points):
         pp = propogate(p,dt)
-        ax.plot3D(pp[:,0], pp[:,1], pp[:,2], label=f'patch point {i}')
-        ax.plot3D(p[0], p[1], p[2], 'ro', markersize=1)
+        #ax.plot3D(pp[:,0], pp[:,1], pp[:,2], label=f'patch point {i}')
+        plt.plot(pp[:,0], pp[:,1], label=f'patch point {i}')
+        plt.plot(p[0], p[1],  'ro', markersize=1)
+        #ax.plot3D(p[0], p[1], p[2], 'ro', markersize=1)
     plt.xlabel('x')
     plt.ylabel('y')
     plt.title(msg)
@@ -426,6 +428,8 @@ def compute_residual_v(patch_points):
     for i,v in enumerate(residual_vector):
         print(f'point {i}', v)
     return np.linalg.norm(residual_vector)
+
+
 if __name__ == "__main__":
     residuals = []
     residual_vs = []
@@ -442,35 +446,21 @@ if __name__ == "__main__":
     tf = 4.3425 * 24 * 60 * 60/tstar #4.3425 days in seconds
     pd = np.array([-153760, 0, 0])/lstar #desired position
     tf *=.1
-    dt =10.0/tstar#.5 
+    dt =50.0/tstar#.5 
 
     #tolerance for answer
     epsilon = 3.844e-3 # km
-    #constraint vector F=p1-p1d = 0
-    v = .2 * tstar / lstar 
-    p = 100000 / lstar
 
-    patch1 = np.array([p0[0], p0[1], p0[2], v0[0], v0[1], v0[2], 0, tf])
-    #patch2 = np.array([pd[0], pd[1], pd[2], v0[0], v0[1], v0[2], tf, tf*2  ])
-    patch3 = np.array([pd[0] , pd[1], pd[2], v0[0] , v0[1], v0[2], tf, tf*2  ])
-    patch2 = patch1+ patch3
-    patch3[-2] = 2*tf
-    patch3[-1] = 3*tf
-
-    patch2[-2] = tf
-    patch2[-1] = 2*tf
-    patch3[3:6] *=-1
-    #patch4[-2] = 3*tf 
-    #patch4[-1] = 4*tf
 
 
 
 
     day = 1 * 24* 60 * 60 / tstar
-    patch1 = [ .55 , -.225, 0, .000001,  .000001 , 0,     0,   day]
-    patch2 = [ .75 ,  .005, 0, .000001,  .0000005, 0,   day, 2*day]
-    patch3 = [ .975,  .085, 0, .000001, -.000001 , 0, 2*day, 3*day]
-    patch4 = [1.2  , -.105, 0, .000001,  .000001 , 0, 3*day, 4*day]
+    day*=1.5
+    patch1 = [ .55 , -.225, 0, .75,  .85 , 0,     0,   day]
+    patch2 = [ .75 ,  .005, 0, .751,  .5, 0,   day, 2*day]
+    patch3 = [ .975,  .085, 0, 1, -.01 , 0, 2*day, 3*day]
+    patch4 = [1.2  , -.105, 0, .00001, - .0001 , 0, 3*day, 4*day]
 
 
     #patch_points = [patch1, patch2, patch3]
@@ -479,6 +469,11 @@ if __name__ == "__main__":
     residual = 99999999
     iterations=0
     while residual > epsilon:
+        residual = compute_residual(patch_points)
+        residual_v = compute_residual_v(patch_points)
+        residuals.append(residual)
+        residual_vs.append(residual_v)
+        print('global position residual, velocity residual:', residual, residual_v)
         plot_points(patch_points, f'Start of level 1:{residual}')    
     #first achieve position continuity
         for i in range(len(patch_points)-1):
@@ -490,11 +485,6 @@ if __name__ == "__main__":
         level_2(patch_points, epsilon)
         print('Global tlt iteration', iterations)
         iterations+=1
-        residual = compute_residual(patch_points)
-        residual_v = compute_residual_v(patch_points)
-        residuals.append(residual)
-        residual_vs.append(residual_v)
-        print('global position residual, velocity residual:', residual, residual_v)
     
     plt.plot(np.arange(len(residuals))[1:], residuals[1:])
     plt.title('(global) residuals vs iteration')
