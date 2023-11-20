@@ -8,6 +8,7 @@ import shutil
 
 
 
+
 def plot_points(patch_points, msg):
     fig = plt.figure()
     ax = plt.axes(projection='3d')
@@ -46,11 +47,11 @@ def get_acceleration(state):
 #    lstar = #distance between two primaries r12
     d= np.sqrt((rho[0]+mu)**2 + rho[1]**2 + rho[2]**2)#r13/lstar
     r= np.sqrt((rho[0]-1+mu)**2 + rho[1]**2 + rho[2]**2)#r23/lstar
-    return np.array([
+    return np.reshape( np.array([
         2*v[1] + rho[0] - (1-mu)*(rho[0]+mu)/d**3 - mu*(rho[0]-1+mu)/r**3,
         -2*v[0] + rho[1] - (1-mu)*rho[1]/d**3 - mu*rho[1]/r**3,
         -rho[2]*(1-mu)/d**3 - mu*rho[2]/r**3
-        ])
+        ]) , (3,1))
 
 
 def dynamics(t, state):
@@ -127,42 +128,21 @@ def propogate(state,dt):
     propogate dynamics given initial state at inital time
     to a final time
     '''
-#    lstar = 238900 * 1.609
-#    G = 6.674e-20
-#    m_moon = 7.34767e22 #kg
-#    m_earth = 5.97219e24 #kg
-#    mstar = (m_earth + m_moon)
-#    tstar = np.sqrt(lstar**3 /(G*mstar) )
-#    h = 5/tstar
-#    x = solve_ivp(dynamics, (t,t+ h), state ).y
-#    print('ivp_solution',x)
-#    return x[:]
-    #while t<tf:
-#    solution= RK45(dynamics, t, state,tf ) 
-#    while True:
-#        solution.step()
-#        if solution.status == 'finished':
-#            break
-#        t_values = solution.t
-#        y_values=solution.y
-#    y_values=np.array(y_values)
-#    print('y value shape',y_values.shape)
-#    return y_values 
     t = state[-2]
     tf = state[-1]
     state = state[:-2]
     states = np.zeros((int((tf-t)//dt),6))
+    if states.size ==0:
+        sys.exit(1)
     states[0] = np.copy(state) 
     i=1
     t+=dt 
     while t<tf:
-    #for i in range(int(t),int(tf),int(dt)):
         if i>=(states.shape[0] ):
             break
         states[i] = rk4_step(dynamics,t,states[i-1],dt )
         t+=dt
         i+=1
-#    print(states)
     return states 
 
 
@@ -178,52 +158,52 @@ def dp1dv0(state_guess, h ):
         dp1dvx,
         dp1dvy,
         dp1dvz
-        )).T 
+        )).T
      
 
 def dv1dp0(state_guess, h ):
     t0 = state_guess[-2]
     tf = state_guess[-1]
     #state_guess = state_guess[:6]
-    dv1dx = ((propogate(state_guess + np.array([h,0,0,0, 0,0, 0, 0]),dt)[-1] - propogate(state_guess - np.array([h,0,0,0, 0,0,0,0]),dt))[-1] / (2*h))[3:6]
-    dv1dy = ((propogate(state_guess + np.array([0,h,0,0, 0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,h,0,0, 0,0,0,0]),dt))[-1] / (2*h))[3:6]
-    dv1dz = ((propogate(state_guess + np.array([0,0,h,0, 0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,h,0, 0,0,0,0]),dt))[-1] / (2*h))[3:6]
+    dv1dx = ((propogate(state_guess + np.array([h,0,0,0,0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([h,0,0,0, 0,0,0,0]),dt))[-1] / (2*h))[3:6]
+    dv1dy = ((propogate(state_guess + np.array([0,h,0,0,0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,h,0,0, 0,0,0,0]),dt))[-1] / (2*h))[3:6]
+    dv1dz = ((propogate(state_guess + np.array([0,0,h,0,0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,h,0, 0,0,0,0]),dt))[-1] / (2*h))[3:6]
     #dp1/dv0 
     return np.vstack((
         dv1dx,
         dv1dy,
         dv1dz
-        )).T 
+        )).T
 
 
 def dv1dv0(state_guess, h ):
     t0 = state_guess[-2]
     tf = state_guess[-1]
     #state_guess = state_guess[:6]
-    dv1dvx = ((propogate(state_guess + np.array([0,0,0,h, 0,0, 0, 0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,h, 0,0,0,0]),dt))[-1] / (2*h))[3:6]
-    dv1dvy = ((propogate(state_guess + np.array([0,0,0,0, h,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0, h,0,0,0]),dt))[-1] / (2*h))[3:6]
-    dv1dvz = ((propogate(state_guess + np.array([0,0,0,0, 0,h,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0, 0,h,0,0]),dt))[-1] / (2*h))[3:6]
+    dv1dvx = ((propogate(state_guess + np.array([0,0,0,h,0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,h,0,0,0,0]),dt))[-1] / (2*h))[3:6]
+    dv1dvy = ((propogate(state_guess + np.array([0,0,0,0,h,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0,h,0,0,0]),dt))[-1] / (2*h))[3:6]
+    dv1dvz = ((propogate(state_guess + np.array([0,0,0,0,0,h,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,0,0,0,h,0,0]),dt))[-1] / (2*h))[3:6]
     #dp1/dv0 
     return np.vstack((
         dv1dvx,
         dv1dvy,
         dv1dvz
-        )).T 
+        )).T
 
 
 def dp1dp0(state_guess, h ):
     t0 = state_guess[-2]
     tf = state_guess[-1]
     #state_guess = state_guess[:6]
-    dp1dx = ((propogate(state_guess + np.array([h,0,0,0, 0,0, 0, 0]),dt)[-1] - propogate(state_guess - np.array([h,0,0,0, 0,0,0,0]),dt))[-1] / (2*h))[:3]
-    dp1dy = ((propogate(state_guess + np.array([0,h,0,0, 0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,h,0,0, 0,0,0,0]),dt))[-1] / (2*h))[:3]
-    dp1dz = ((propogate(state_guess + np.array([0,0,h,0, 0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,h,0, 0,0,0,0]),dt))[-1] / (2*h))[:3]
+    dp1dx = ((propogate(state_guess + np.array([h,0,0,0,0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([h,0,0,0,0,0,0,0]),dt))[-1] / (2*h))[:3]
+    dp1dy = ((propogate(state_guess + np.array([0,h,0,0,0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,h,0,0,0,0,0,0]),dt))[-1] / (2*h))[:3]
+    dp1dz = ((propogate(state_guess + np.array([0,0,h,0,0,0,0,0]),dt)[-1] - propogate(state_guess - np.array([0,0,h,0,0,0,0,0]),dt))[-1] / (2*h))[:3]
     #dp1/dv0 
     return np.vstack((
         dp1dx,
         dp1dy,
         dp1dz
-        )).T 
+        )).T
 
 
 def level_1(initial_state, state_desired, epsilon):
@@ -325,38 +305,75 @@ def level_2(patch_points, epsilon):
         statef = patch_points[i+2]
 
         #not sure if these are right
+        #from collin york's paper 
         Aop = dp1dp0(state0, h_p)
         Bop = dp1dv0(state0, h_v)
+        Cop = dv1dp0(state0, h_p)
+        Dop = dv1dv0(state0, h_v)
         
-        Bpo = np.linalg.inv(Bop)
-        #yes I know this is redundant, will make more efficient if it actually works
-        Bpo_inv = np.linalg.inv(Bpo)
         Apo = np.linalg.inv(Aop)
+        Bpo = np.linalg.inv(Bop)
+        Dpo = np.linalg.inv(Dop)
 
-        Bpf = dp1dv0(statep, h_v)
-        Bpf_inv = np.linalg.inv(Bpf)
+
         Apf = dp1dp0(statep, h_p)
+        Bpf = dp1dv0(statep, h_v)
+        Cpf = dv1dp0(statep, h_p)
+        Dpf = dv1dv0(statep, h_v)
 
-        binvA_po = Bpo_inv*Apo
-        binvA_pf = Bpf_inv*Apf
+        Afp = np.linalg.inv(Apf)
+        Bfp = np.linalg.inv(Bpf)
+        Dfp = np.linalg.inv(Dpf)
 
+        #useful propogated states
         statepm = propogate(state0, dt)[-1]
         statefm = propogate(statep, dt)[-1]
 
+        #useful accelerations 
+        afm = get_acceleration(statefm)
         apm = get_acceleration(statepm)
         app = get_acceleration(statep)
+        a0 = get_acceleration(state0)
+        #these are from spreens paper 
+        """
+        dv0pdr0 = -Bpo_invApo
+        dv0pdt0 = a0 - Dop@Bpo@np.reshape(state0[3:6], (3,1))
+        dv0pdrp = Bop 
+        dv0pdtp = -Bop @ np.reshape(statep[3:6], (3,1))
 
-        dvpdp0 = Bpo_inv
-        dvpdt0 = np.reshape(-Bpo_inv @ state0[3:6], (3,1))
-        dvpdpp = -binvA_po
-        dvpdtp = np.reshape( binvA_po @ statepm[3:6] + apm, (3,1))
+        dvpmdr0 = Bpo 
+        dvpmdt0 = -Bpo @ np.reshape(state0[3:6], (3,1))
+        dvpmdrp = -Bpo @ Aop 
+        dvpmdtp = apm - Dpo@Bop@np.reshape(statep[3:6], (3,1))
 
-        dvpdpf = Bpf_inv
-        dvpdtf = np.reshape(-Bpf_inv @ statefm[3:6], (3,1))
-        dvpdppp = -binvA_pf
-        dvpdtpp = np.reshape(binvA_pf @ statep[3:6] + app , (3,1))
+        dvppdrp = -Bpf @ Afp 
+        dvppdtp = app - Dpf @ Bfp @ np.reshape(statep[3:6],(3,1))
+        dvppdrf = -Bpf 
+        dvppdtf = -Bpf @ np.reshape(statefm[3:6], (3,1))
 
-        DF[i*3:3+ i*3, 4*i: 4*i + 12] = np.hstack((dvpdp0, dvpdt0, dvpdpp-dvpdppp, dvpdtp-dvpdtpp, -dvpdpf, -dvpdtf ))
+        dvfmdrp = Bfp
+        dvfmdtp = -Bfp @ np.reshape(statep[3:6], (3,1))
+        dvfmdrf = -Bfp@Apf
+        dvfmdtf = afm - Dfp @ Bpf @ np.reshape(statefm[3:6], (3,1))
+
+
+
+
+
+
+        """
+        dvpmdp0 = Bop
+        dvpmdt0 = -Bop @ np.reshape(state0[3:6], (3,1))
+        dvpmdpp = -Bop @ Apo 
+        dvpmdtp = Bop @ Apo @ np.reshape(statepm[3:6], (3,1)) + apm  
+
+        dvppdpf = Bfp
+        dvppdtf = -Bfp @ np.reshape(statefm[3:6], (3,1))
+        dvppdpp = -Bfp @ Apf 
+        dvppdtp = Bfp @ Apf @ np.reshape(statep[3:6], (3,1)) + app 
+        
+        #DF[i*3:3+ i*3, 4*i: 4*i + 12] = np.hstack((dvpmdr0, dvpmdt0, dvpmdrp-dvppdrp, dvpmdtp - dvppdtp, -dvppdrf, -dvppdtf ))
+        DF[i*3:3+ i*3, 4*i: 4*i + 12] = np.hstack((dvpmdp0, dvpmdt0, dvpmdpp-dvppdpp, dvpmdtp-dvppdtp, -dvppdpf, -dvppdtf ))
 
         """
         print('DF shape', DF.shape)
@@ -373,15 +390,19 @@ def level_2(patch_points, epsilon):
         F[i*3:i*3 + 3] = np.reshape(vp_prop - statep[3:6], (3,1)) #, vf_prop - statef[3:6]])
 
     #print(f'DF {DF.shape}:{DF}')
+    
     DX = -DF.T @ np.linalg.inv( DF @ DF.T) @ F
+    print('DX SHAPE!!!!', DX.shape)
     for i in range(len(patch_points)):
         patch_points[i][:3] +=   (np.reshape( DX[i*4:i*4 + 3], 3))
-        patch_points[i][-1] +=  0* DX[i*4 + 3] #adjust end time of patch point
-        if i < (len(patch_points) -1):
+        patch_points[i][-1] +=   DX[i*4 + 3][0] #adjust end time of patch point
+        print(DX.shape, DX[i*4+3].shape,  patch_points[i][-1].shape)
+        if i != (len(patch_points) -1):
             patch_points[i+1][-2] = patch_points[i][-1]#adjust start time of next patch point
         print('change in position (km)',  DX[i*4:i*4 + 3]*lstar)
         print('change in time (s)', DX[i*4 + 3]* tstar )
         assert (patch_points[i][-1] >=0) and (patch_points[i][-2] >=0)
+        assert (patch_points[i][-2] != patch_points[i][-1])
 
 
 
@@ -402,8 +423,8 @@ def compute_residual_v(patch_points):
         p1 = propogate(state,dt)[-1]
         residual_vector[i] = np.linalg.norm(p1[3:6] - patch_points[i+1][ 3:6])
     print('vel res vec')
-    for i in residual_vector:
-        print(i)
+    for i,v in enumerate(residual_vector):
+        print(f'point {i}', v)
     return np.linalg.norm(residual_vector)
 if __name__ == "__main__":
     residuals = []
@@ -421,14 +442,13 @@ if __name__ == "__main__":
     tf = 4.3425 * 24 * 60 * 60/tstar #4.3425 days in seconds
     pd = np.array([-153760, 0, 0])/lstar #desired position
     tf *=.1
-    dt =1.0/tstar#.5 
+    dt =10.0/tstar#.5 
 
     #tolerance for answer
     epsilon = 3.844e-3 # km
     #constraint vector F=p1-p1d = 0
     v = .2 * tstar / lstar 
     p = 100000 / lstar
-
 
     patch1 = np.array([p0[0], p0[1], p0[2], v0[0], v0[1], v0[2], 0, tf])
     #patch2 = np.array([pd[0], pd[1], pd[2], v0[0], v0[1], v0[2], tf, tf*2  ])
@@ -444,8 +464,17 @@ if __name__ == "__main__":
     #patch4[-1] = 4*tf
 
 
+
+
+    day = 1 * 24* 60 * 60 / tstar
+    patch1 = [ .55 , -.225, 0, .000001,  .000001 , 0,     0,   day]
+    patch2 = [ .75 ,  .005, 0, .000001,  .0000005, 0,   day, 2*day]
+    patch3 = [ .975,  .085, 0, .000001, -.000001 , 0, 2*day, 3*day]
+    patch4 = [1.2  , -.105, 0, .000001,  .000001 , 0, 3*day, 4*day]
+
+
     #patch_points = [patch1, patch2, patch3]
-    patch_points = [patch1, patch2, patch3]#, patch4]
+    patch_points = [patch1, patch2, patch3,  patch4]
    
     residual = 99999999
     iterations=0
