@@ -94,9 +94,9 @@ def dynamics(t, state):
                      a[0],
                      a[1],
                      a[2],
-                     0,
-                     0,
-                     0
+                     0, #dont integrate thrust
+                     0, #^
+                     0  #^
         ])
 
 def get_thrust(Y,A,B):
@@ -114,8 +114,8 @@ def get_thrust(Y,A,B):
 def get_aby(T):
     Y = np.linalg.norm(T)
     t = T/Y
-    A = np.arctan(t[0] / t[1])
-    B = np.arctan(t[2] / t[1])
+    A = np.arctan2(t[0] , t[1])
+    B = np.arctan2(t[2] , t[1])
     return A,B,Y
 
 
@@ -141,7 +141,7 @@ def propogate(state,dt, thrust=False):
     if not thrust:
         t = state[-3] #tT
         tf = state[-1] #ti+1
-        print(f'no thrust PROPOGATE tf {tf} t {t} dt {dt}')
+#        print(f'no thrust PROPOGATE tf {tf} t {t} dt {dt}')
         states = np.zeros((int((tf-t)//dt),9))
         state = state[:-3] #exclude times from state vector
         states[0] = np.copy(state) 
@@ -149,9 +149,11 @@ def propogate(state,dt, thrust=False):
     else:
         t = state[-2] #t0
         tf = state[-3] #tT
-        print(f'thrust PROPOGATE tf {tf} t {t} dt {dt}')
+ #       print(f'thrust PROPOGATE tf {tf} t {t} dt {dt}')
         states = np.zeros((int((tf-t)//dt),9))
         state = state[:-3] #exclude times from state vector
+        if states.size ==0:
+            return np.array([state])
         states[0] = np.copy(state) 
         
     i=1
@@ -222,7 +224,7 @@ def dp1dp0(state_guess, h ):
         dp1dz
         )).T
 
-
+#F0T
 def dp1dY0(state_guess,h):
     #just the burn
     t0 = state_guess[-2]
@@ -240,7 +242,7 @@ def dp1dY0(state_guess,h):
     #state_guess = state_guess[:6]
     dp1dY0 = ((propogate(statep,dt)[-1] - propogate(statem,dt))[-1] / (2*h))[:3]
     return np.reshape(dp1dY0, (3,1))
-
+#J0T
 def dv1dY0(state_guess,h):
     t0 = state_guess[-2]
     tf = state_guess[-3]
@@ -258,7 +260,7 @@ def dv1dY0(state_guess,h):
     dv1dY0 = ((propogate(statep,dt)[-1] - propogate(statem,dt))[-1] / (2*h))[3:6]
     return np.reshape(dv1dY0, (3,1))
 
-
+#G0T
 def dp1dA0(state_guess,h):
     t0 = state_guess[-2]
     tf = state_guess[-3]
@@ -276,7 +278,7 @@ def dp1dA0(state_guess,h):
     dp1dA0 = ((propogate(statep,dt)[-1] - propogate(statem,dt))[-1] / (2*h))[:3]
     return np.reshape(dp1dA0, (3,1))
 
-
+#K0T
 def dv1dA0(state_guess,h):
     t0 = state_guess[-2]
     tf = state_guess[-3]
@@ -294,7 +296,7 @@ def dv1dA0(state_guess,h):
     dv1dA0 = ((propogate(statep,dt)[-1] - propogate(statem,dt))[-1] / (2*h))[3:6]
     return np.reshape(dv1dA0, (3,1))
 
-
+#H0T
 def dp1dB0(state_guess,h):
     t0 = state_guess[-2]
     tf = state_guess[-3]
@@ -311,7 +313,7 @@ def dp1dB0(state_guess,h):
     #state_guess = state_guess[:6]
     dp1dA0 = ((propogate(statep,dt)[-1] - propogate(statem,dt))[-1] / (2*h))[:3]
     return np.reshape(dp1dA0, (3,1))
-
+#L0T
 def dv1dB0(state_guess,h):
     t0 = state_guess[-2]
     tf = state_guess[-3]
@@ -361,6 +363,9 @@ def level_1(initial_state, state_desired, epsilon):
     X = np.reshape(np.array([Y,A,B, initial_state[3], initial_state[4], initial_state[5], initial_state[-3] ]), (7,1))
     i=0
     
+    plot_points([state_guess, state_desired], 'before  level 1')
+        
+    residual = np.linalg.norm(pfm-pfp)
     while residual > epsilon:
         print('residual', residual)
         #update propogated position
@@ -371,6 +376,9 @@ def level_1(initial_state, state_desired, epsilon):
         pfm = propogate(Tm, dt, thrust=False)[-1,:3]
         
         F = np.reshape(pfm - pfp, (3,1))
+        residual = np.linalg.norm(pfm-pfp)
+        if residual < epsilon:
+            break
         print('stateTm shape', stateTm.shape)
         apTm = get_acceleration(stateTm, thrust=True) #ingoing with thrust
         apTp = get_acceleration(stateTm, thrust=False) #outgoing without thrust
@@ -404,10 +412,20 @@ def level_1(initial_state, state_desired, epsilon):
         X+=DX
         #update state_guess with X... bro this is lame
         state_guess[3:6] = np.reshape(X[3:6], 3)
-        state_guess[0:3] = np.reshape(X[:3], 3)
-        state_guess[-3]  = X[6]
+        T = get_thrust(X[0,0], X[1,0], X[2,0])
+        print('THRUST', T)
+        print('DX', DX)
+        state_guess[6:9] = T
+        #state_guess[0:3] = np.reshape(X[:3], 3)
+        state_guess[-3]  = X[6,0]
+        print('times')
+        print(state_guess[-3], state_guess[-2], state_guess[-1])
+        if state_guess[-3] < state_guess[-2]:
+            state_guess[-3] = state_guess[-2]
+        #assert state_guess[-3] >= state_guess[-2]
         i+=1
-
+        print('state guess', state_guess)
+    plot_points([state_guess, state_desired],f'after level 1 converged residual {residual}')
 
     return state_guess
 
@@ -593,7 +611,7 @@ if __name__ == "__main__":
     dt =100.0/tstar#.5 
 
     #tolerance for answer
-    epsilon = 3.844e-9 # km
+    epsilon = 3.844e-3 # km
 
 
 
