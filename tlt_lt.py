@@ -166,6 +166,19 @@ def propogate(state,dt, thrust=False):
         i+=1
     return states 
 
+
+
+def propogate_full(state_guess, dt):
+    stateTm = propogate(state_guess, dt, thrust=True)[-1]
+    ptm = stateTm[:3]
+    Tm = np.copy(state_guess)
+    Tm[:9] = stateTm
+    #coast arc
+    pfm = propogate(Tm, dt, thrust=False)
+    return pfm
+
+
+
 #B01
 def dp1dv0(state_guess, h ):
     t0 = state_guess[-2]
@@ -437,123 +450,117 @@ def level_1(initial_state, state_desired, epsilon):
 
 
 def level_2(patch_points, epsilon):
-#only one iteration
-    #constraint F= v1 - state_desired[3:-2]
-    #minimum norm soluion (3.12) DX = -DF.T * (DF* DF.T).inverse() * F
-    #least squares solution (3.17) DX = -(DF.T*DF).inverse() * DF.T*F
-    #DF = [0, dv1/dp0, dv1/dt0, (dv1/dp1 - dV1/dp1), (dv1/dt1 - dV1/dt1), -dV1dpf, -dV1/dtf, 0] 
-    #where V is the velocity at state_desired, v is the propogated velocity at t=tf
-    #jacobain equations for calculated v1
-    #dv1dp0 = B.inverse()
-    #dv1dt0 = -B.inverse() * v0     #assuming V0=v0
-    #dv1dp1 = -B.inverse() * A
-    #dv1dt1 = B.inverse() * A * v1 + a1
 
-
-    #jacobain equations for desired V1
-    #dV1dp0 = B.inverse()
-    #dV1dt0 = -B.inverse() * v0
-    #dV1dp1 = -B.inverse() * A
-    #dV1dt1 = B.inverse() * A * V1 + A1
-    
     h= .00001
     h_v = h* tstar / lstar
     h_p = h /lstar
     DF = np.zeros(((len(patch_points) - 2)*3, 4*len(patch_points)))
     F = np.zeros((3 * (len(patch_points) - 2), 1))
-    
+ 
     for i in range(len(patch_points) - 2):
         #reference states from paper
         state0 = patch_points[i]
         statep = patch_points[i+1]
         statef = patch_points[i+2]
 
-        #not sure if these are right
-        #from collin york's paper 
-        Aop = dp1dp0(state0, h_p)
-        Bop = dp1dv0(state0, h_v)
-        #Cop = dv1dp0(state0, h_p)
-        #Dop = dv1dv0(state0, h_v)
-        
-        Apo = np.linalg.inv(Aop)
-        Bpo = np.linalg.inv(Bop)
-        #Dpo = np.linalg.inv(Dop)
-
-
-        Apf = dp1dp0(statep, h_p)
-        Bpf = dp1dv0(statep, h_v)
-        #Cpf = dv1dp0(statep, h_p)
-        #Dpf = dv1dv0(statep, h_v)
-
-        Afp = np.linalg.inv(Apf)
-        Bfp = np.linalg.inv(Bpf)
         #Dfp = np.linalg.inv(Dpf)
 
         #useful propogated states
-        statepm = propogate(state0, dt)[-1]
-        statefm = propogate(statep, dt)[-1]
+        statepm = propogate_full(state0, dt)[-1]
+        statefm = propogate_full(statep, dt)[-1]
 
         #useful accelerations 
-        afm = get_acceleration(statefm)
-        apm = get_acceleration(statepm)
-        app = get_acceleration(statep)
-        a0 = get_acceleration(state0)
-        #these are from spreens paper 
-        """
-        dv0pdr0 = -Bpo_invApo
-        dv0pdt0 = a0 - Dop@Bpo@np.reshape(state0[3:6], (3,1))
-        dv0pdrp = Bop 
-        dv0pdtp = -Bop @ np.reshape(statep[3:6], (3,1))
-
-        dvpmdr0 = Bpo 
-        dvpmdt0 = -Bpo @ np.reshape(state0[3:6], (3,1))
-        dvpmdrp = -Bpo @ Aop 
-        dvpmdtp = apm - Dpo@Bop@np.reshape(statep[3:6], (3,1))
-
-        dvppdrp = -Bpf @ Afp 
-        dvppdtp = app - Dpf @ Bfp @ np.reshape(statep[3:6],(3,1))
-        dvppdrf = -Bpf 
-        dvppdtf = -Bpf @ np.reshape(statefm[3:6], (3,1))
-
-        dvfmdrp = Bfp
-        dvfmdtp = -Bfp @ np.reshape(statep[3:6], (3,1))
-        dvfmdrf = -Bfp@Apf
-        dvfmdtf = afm - Dfp @ Bpf @ np.reshape(statefm[3:6], (3,1))
-
-
-
-
-
-
-        """
-        dvpmdp0 = Bop
-        dvpmdt0 = -Bop @ np.reshape(state0[3:6], (3,1))
-        dvpmdpp = -Bop @ Apo 
-        dvpmdtp = Bop @ Apo @ np.reshape(statepm[3:6], (3,1)) + apm  
-
-        dvppdpf = Bfp
-        dvppdtf = -Bfp @ np.reshape(statefm[3:6], (3,1))
-        dvppdpp = -Bfp @ Apf 
-        dvppdtp = Bfp @ Apf @ np.reshape(statep[3:6], (3,1)) + app 
+        afm = get_acceleration(statefm, thrust=False)
+        apm = get_acceleration(statepm, thrust=False)
+        app = get_acceleration(statep,  thrust=False)
+        a0 = get_acceleration(state0,   thrust=False)
         
-        #DF[i*3:3+ i*3, 4*i: 4*i + 12] = np.hstack((dvpmdr0, dvpmdt0, dvpmdrp-dvppdrp, dvpmdtp - dvppdtp, -dvppdrf, -dvppdtf ))
+
+        #copied from level 1
+        #thrust arc
+        statepTm = propogate(state0, dt, thrust=True)[-1]
+        pTm = np.copy(state0)
+        pTm[:9] = statepTm
+
+        v0p = np.reshape(state0[3:6], (3,1))
+        vpm = np.reshape(statepm[3:6], (3,1))
+        vfm = np.reshape(statefm[3:6], (3,1))
+        vpp = np.reshape(statep[3:6], (3,1))
+
+
+
+
+        Ab0p = dp1dp0(pTm,h_p) #just the coast
+        A0p = dp1dp0(state0,h_p) #just the coast
+        
+        Bb0p = dp1dv0(pTm,h_v) #just the coast
+        B0p  = dp1dv0(state0, h_v)
+        
+        Cb0p  = dv1dp0(pTm, h_p )
+        C0p  = dv1dp0(state0, h_p )
+        
+        D0p  = dv1dv0(state0, h_v)
+        Db0p  = dv1dv0(pTm, h_v)
+        
+        E0p  = np.zeros((3,1))
+       
+
+
+        Ap0 = np.linalg.inv(A0p)
+        Abp0 = np.linalg.inv(Ab0p)
+        Bp0 = np.linalg.inv(B0p)
+        Bbp0 = np.linalg.inv(Bb0p)
+        Cp0 = np.linalg.inv(C0p)
+        Cbp0 = np.linalg.inv(Cb0p)
+        Dp0 = np.linalg.inv(D0p)
+        Dbp0 = np.linalg.inv(Db0p)
+        Ep0 = E0p#np.linalg.inv(E0p)
+
+
+
+
+
+        statefTm = propogate(statep, dt, thrust=True)[-1]
+        fTm = np.copy(statep)
+        fTm[:9] = statefTm
+
+
+
+        Abpf = dp1dp0(fTm,h_p) #just the coast
+        Apf = dp1dp0(statep,h_p) #just the coast
+        Bbpf = dp1dv0(fTm,h_v) #just the coast
+        Bpf = dp1dv0(statep,h_v) #just the coast
+        Cpf  = dv1dp0(fTm, h_p )
+        Dpf  = dv1dv0(statep, h_v)
+        Epf  = np.zeros((3,1))
+        Ipf  = np.zeros((3,1))
+
+        
+        md0p = 0
+        mdpp = 0
+        mpp = 0
+        ABD1_inv = np.linalg.inv(Ap0@Bbp0 + Bp0@Dbp0)
+        AABC1 = Ap0@Abp0 + Bp0@Cbp0
+        dvpmdp0 = ABD1_inv 
+        dvpmdt0 = ABD1_inv @ (Ep0*md0p - v0p)
+        dvpmdpp = -ABD1_inv @  AABC1
+        dvpmdtp = ABD1_inv @ AABC1@vpm + apm
+
+        ABD_inv = np.linalg.inv(Abpf@Bpf + Bbpf@Dpf)
+        AABC = Abpf@Apf + Bbpf@Cpf
+        dvppdpf = ABD_inv
+        dvppdtf = -ABD_inv @ vfm
+        dvppdpp = -ABD_inv @ AABC
+        dvppdtp = -ABD_inv @ (AABC@vpp + (Abpf@Epf + Bbpf@Ipf)*mpp) + app
+        
         DF[i*3:3+ i*3, 4*i: 4*i + 12] = np.hstack((dvpmdp0, dvpmdt0, dvpmdpp-dvppdpp, dvpmdtp-dvppdtp, -dvppdpf, -dvppdtf ))
 
-        """
-        print('DF shape', DF.shape)
-        print(DF)
-        print()
-        print(DF.T)
-        print()
-        print(DF @ DF.T)
-        """
-        #minimum norm soluion (3.12) DX = -DF.T * (DF* DF.T).inverse() * F
+        
         vp_prop = statepm[3:6]
         vf_prop = statefm[3:6]
         
         F[i*3:i*3 + 3] = np.reshape(vp_prop - statep[3:6], (3,1)) #, vf_prop - statef[3:6]])
 
-    #print(f'DF {DF.shape}:{DF}')
     
     DX = -DF.T @ np.linalg.inv( DF @ DF.T) @ F
     print('DX SHAPE!!!!', DX.shape)
@@ -627,9 +634,13 @@ if __name__ == "__main__":
     patch4 = [1.2  , -.105, 0,  .1  , -.5  , 0,Thrust,0,0, T+3*day, 3*day, 4*day]
 
 
+    
     #patch_points = [patch1, patch2, patch3]
     patch_points = [patch1, patch2, patch3,  patch4]
    
+    print('initial conditions')
+    for i,point in enumerate(patch_points):
+        print(f'point {i+1}: {point}')
     residual = 99999999
     iterations=0
     while residual > epsilon:
@@ -646,7 +657,6 @@ if __name__ == "__main__":
         #plot_points(patch_points, f'Start of Level 2:{residual}')
         print('LEVEL 2!!!!!!!!!!!!!')    
     #Then achieve velocity continuity
-        sys.exit(0)
         level_2(patch_points, epsilon)
         print('Global tlt iteration', iterations)
         iterations+=1
